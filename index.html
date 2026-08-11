@@ -915,8 +915,8 @@
         ceo: "Nguyễn Tống Thắng",
         cfo: "Phạm Thanh Hương",
         bod: [
-            { id: "2", name: "Mai Trung Khánh", role: "Thành viên HĐQT" },
-            { id: "3", name: "Nguyễn Tống Thắng", role: "Thành viên HĐQT" }
+            { id: "3", name: "Nguyễn Tống Thắng", role: "Thành viên HĐQT" },
+            { id: "6", name: "Bạch Phương Vinh", role: "Thành viên HĐQT" }
         ],
         shareholders: [
             { id: "1", name: "Nguyễn Thị Quy", shares: 510000 },
@@ -978,7 +978,7 @@
             document.getElementById('exec-name-input').value = state.chairman;
         } else if (type === 'ceo') {
             document.getElementById('modal-exec-title').innerText = "Chỉnh sửa Tổng Giám Đốc";
-            document.getElementById('exec-label').innerText = "Họ và tên Tổng Giám gốc";
+            document.getElementById('exec-label').innerText = "Họ và tên Tổng Giám đốc";
             document.getElementById('exec-name-input').value = state.ceo;
         } else {
             document.getElementById('modal-exec-title').innerText = "Chỉnh sửa Kế Toán Trưởng";
@@ -1181,6 +1181,9 @@
             const targetSh = state.shareholders.find(s => s.id === id);
             if (!targetSh) return;
 
+            // Always update name
+            targetSh.name = name;
+
             const diff = inputShares - targetSh.shares;
 
             if (diff !== 0) {
@@ -1207,12 +1210,10 @@
                     sourceSh.shares += Math.abs(diff);
                     targetSh.shares = inputShares;
                 }
-            } else {
-                targetSh.name = name;
             }
         }
 
-        // Cleanup: remove shareholders with 0 shares (auto-delete if they end up with 0)
+        // Cleanup: remove shareholders with 0 shares
         state.shareholders = state.shareholders.filter(s => s.shares > 0);
 
         closeModal('modal-sh');
@@ -1434,6 +1435,48 @@
         });
     }
 
+    // STATE SANITIZATION / HEALING (Converts old capital format and preserves 1,000,000 shares total)
+    function sanitizeState() {
+        if (!state.chairman) state.chairman = "Nguyễn Thị Quy";
+        if (!state.ceo) state.ceo = "Nguyễn Tống Thắng";
+        if (!state.cfo) state.cfo = "Phạm Thanh Hương";
+        
+        // Enforce the new Board members if they are using default or old state
+        // The HĐQT list should contain Nguyễn Tống Thắng and Bạch Phương Vinh
+        const hasVinh = state.bod.some(m => m.name === "Bạch Phương Vinh");
+        if (!hasVinh) {
+            state.bod = [
+                { id: "3", name: "Nguyễn Tống Thắng", role: "Thành viên HĐQT" },
+                { id: "6", name: "Bạch Phương Vinh", role: "Thành viên HĐQT" }
+            ];
+        }
+
+        if (state.shareholders) {
+            // Convert old 'capital' property to 'shares' if necessary
+            state.shareholders.forEach(sh => {
+                if (sh.shares === undefined) {
+                    if (sh.capital !== undefined) {
+                        sh.shares = Math.round(sh.capital / PAR_VALUE);
+                    } else {
+                        sh.shares = 0;
+                    }
+                }
+            });
+
+            // Filter out empty shareholders
+            state.shareholders = state.shareholders.filter(s => s.shares > 0);
+
+            // Rebalance to ensure exactly 1,000,000 shares
+            const sumShares = state.shareholders.reduce((acc, sh) => acc + sh.shares, 0);
+            if (sumShares !== TOTAL_SHARES && state.shareholders.length > 0) {
+                const diff = TOTAL_SHARES - sumShares;
+                // Add the difference to Nguyễn Thị Quy or first shareholder
+                const target = state.shareholders.find(s => s.name === "Nguyễn Thị Quy" || s.id === "1") || state.shareholders[0];
+                target.shares += diff;
+            }
+        }
+    }
+
     function renderAll() {
         renderExec();
         renderBod();
@@ -1466,6 +1509,7 @@
         } catch (e) {
             console.warn("Could not load state from URL, using default state", e);
         }
+        sanitizeState();
     }
 
     function shareState() {
